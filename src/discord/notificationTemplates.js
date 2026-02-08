@@ -109,9 +109,13 @@ function replacePlaceholdersInString(str, replacements) {
   let out = str;
   const rep = replacements || {};
 
-  // 1) Legacy exact-string replacement support (e.g. needles like "``ID``").
+  // Legacy support: only do exact-string replacement when the caller provided an explicit
+  // backticked placeholder needle (e.g. "``ID``"). Never replace raw keys like "ID" since
+  // that breaks normal text such as field names like "Ticket ID".
   for (const [needle, value] of Object.entries(rep)) {
-    out = out.split(String(needle)).join(String(value ?? ''));
+    const n = String(needle);
+    if (!n.includes('``')) continue;
+    out = out.split(n).join(String(value ?? ''));
   }
 
   // 2) Template-friendly replacement for placeholders inside double-backticks, e.g. ``ID``.

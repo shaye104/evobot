@@ -58,6 +58,14 @@ async function startDiscordBot() {
     partials: [Partials.Channel],
   });
 
+  function shortPreview(input, maxLen = 20) {
+    const text = String(input || '').replace(/\s+/g, ' ').trim();
+    if (!text) return 'New message';
+    if (text.length <= maxLen) return text;
+    if (maxLen <= 3) return '...'.slice(0, maxLen);
+    return `${text.slice(0, maxLen - 3).trimEnd()}...`;
+  }
+
   async function handleAutoRoleAndWelcome(discordId) {
     if (!discordId) return;
     if (!CONFIG.DISCORD_GUILD_ID || !CONFIG.DISCORD_ROLE_ID) return;
@@ -205,7 +213,7 @@ async function startDiscordBot() {
         const base = (CONFIG.SUPPORT_API_BASE || CONFIG.BASE_URL || '').replace(/\/$/, '');
         const ticketUrl = `${base}/ticket.html?id=${encodeURIComponent(String(msg.public_id || ''))}`;
         const body = String(msg.body || '').trim();
-        const preview = body.replace(/\s+/g, ' ').slice(0, 90) || 'New message';
+        const preview = shortPreview(body, 20);
         const sender = String(msg.author_name || 'Staff').trim() || 'Staff';
 
         const template = templates.get('📩 New Message Received');
@@ -302,7 +310,7 @@ async function startDiscordBot() {
         const base = (CONFIG.SUPPORT_API_BASE || CONFIG.BASE_URL || '').replace(/\/$/, '');
         const staffTicketUrl = `${base}/staff-ticket.html?id=${encodeURIComponent(String(msg.public_id || ''))}`;
         const body = String(msg.body || '').trim();
-        const preview = body.replace(/\s+/g, ' ').slice(0, 90) || 'New message';
+        const preview = shortPreview(body, 20);
         const sender = String(msg.author_name || 'User').trim() || 'User';
 
         const template = templates.get('📩 New Message Received');
@@ -539,6 +547,49 @@ async function startDiscordBot() {
                   embeds: payload.embeds,
                   components: payload.components,
                 });
+                // After claim, DM the ticket creator that their ticket has been assigned.
+                if (ev.action === 'ticket.claim' && ev.creator_discord_id) {
+                  try {
+                    const userDm = await client.users.fetch(String(ev.creator_discord_id));
+                    const tAssign = templates.get('👤 Ticket Assigned');
+                    const userTicketUrl = `${base}/ticket.html?id=${encodeURIComponent(publicId)}`;
+                    const agent = String(ev.claimed_by_name || ev.actor_name || 'Staff').trim() || 'Staff';
+                    if (tAssign) {
+                      const dmPayload = renderTemplate(tAssign, {
+                        ticketUrl: userTicketUrl,
+                        replacements: {
+                          ID: publicId,
+                          username: agent,
+                        },
+                        now: new Date(),
+                      });
+                      await userDm.send({
+                        content: dmPayload.content,
+                        embeds: dmPayload.embeds,
+                        components: dmPayload.components,
+                      });
+                    } else {
+                      const embed = new EmbedBuilder()
+                        .setTitle('Ticket Assigned')
+                        .setDescription('Your ticket is now being handled by a support agent.')
+                        .setColor(0x3484ff)
+                        .addFields(
+                          { name: 'Ticket ID', value: `\`\`${publicId}\`\``, inline: true },
+                          { name: 'Assigned Agent', value: `\`\`${agent}\`\``, inline: true }
+                        )
+                        .setFooter({ text: new Date().toLocaleString('en-GB', { hour12: false }) });
+                      const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder()
+                          .setStyle(ButtonStyle.Link)
+                          .setLabel('Open Ticket')
+                          .setURL(userTicketUrl)
+                      );
+                      await userDm.send({ embeds: [embed], components: [row] });
+                    }
+                  } catch (err) {
+                    console.warn(`[discord] Ticket assigned DM failed: ${err.message}`);
+                  }
+                }
                 continue;
               }
             } catch {
