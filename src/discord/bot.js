@@ -137,9 +137,14 @@ async function startDiscordBot() {
       return {
         last_staff_message_id: parsed.last_staff_message_id ?? null,
         last_audit_event_id: parsed.last_audit_event_id ?? null,
+        ticket_open_message_ids: parsed.ticket_open_message_ids || {},
       };
     } catch {
-      return { last_staff_message_id: null, last_audit_event_id: null };
+      return {
+        last_staff_message_id: null,
+        last_audit_event_id: null,
+        ticket_open_message_ids: {},
+      };
     }
   }
 
@@ -340,10 +345,15 @@ async function startDiscordBot() {
                 ],
               };
 
-          await channel.send({
+          const sent = await channel.send({
             embeds: payload.embeds,
             components: payload.components,
           });
+
+          // Store the message id so we can edit it later (e.g., when claimed).
+          state.ticket_open_message_ids = state.ticket_open_message_ids || {};
+          state.ticket_open_message_ids[publicId] = String(sent.id);
+          await saveBotState(state);
         } else if (ev.action === 'ticket.escalate') {
           const channelId =
             CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID ||
@@ -392,6 +402,64 @@ async function startDiscordBot() {
             embeds: payload.embeds,
             components: payload.components,
           });
+        } else if (ev.action === 'ticket.claim' || ev.action === 'ticket.unclaim') {
+          const channelId =
+            CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID ||
+            CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
+          const channel = await fetchNotifyChannel(channelId);
+          if (!channel) continue;
+
+          const t = templates.get('🎫 Ticket Opened');
+          const openedBy = String(ev.opened_by_name || 'User').trim() || 'User';
+          const panelName = String(ev.panel_name || 'Unknown').trim() || 'Unknown';
+          const claimedBy = String(ev.claimed_by_name || 'Nobody').trim() || 'Nobody';
+
+          const payload = t
+            ? renderTemplate(t, {
+                ticketUrl: staffTicketUrl,
+                replacements: {
+                  ID: publicId,
+                  'panel name': panelName,
+                  username: openedBy,
+                  'nobody/usernane': claimedBy,
+                },
+                now: new Date(),
+              })
+            : null;
+
+          const msgId =
+            state.ticket_open_message_ids &&
+            state.ticket_open_message_ids[publicId]
+              ? String(state.ticket_open_message_ids[publicId])
+              : '';
+
+          if (payload && msgId) {
+            try {
+              const existing = await channel.messages.fetch(msgId);
+              if (existing) {
+                await existing.edit({
+                  content: payload.content,
+                  embeds: payload.embeds,
+                  components: payload.components,
+                });
+                continue;
+              }
+            } catch {
+              // If we can't fetch/edit (deleted message, perms, etc.), fall back to sending a new one.
+            }
+          }
+
+          // No stored message (or edit failed): send a fresh opened embed and update mapping.
+          if (payload) {
+            const sent = await channel.send({
+              content: payload.content,
+              embeds: payload.embeds,
+              components: payload.components,
+            });
+            state.ticket_open_message_ids = state.ticket_open_message_ids || {};
+            state.ticket_open_message_ids[publicId] = String(sent.id);
+            await saveBotState(state);
+          }
         }
       } catch (err) {
         console.warn(`[discord] Ticket event notify failed: ${err.message}`);

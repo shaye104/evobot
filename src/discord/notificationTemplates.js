@@ -78,7 +78,15 @@ function addTimestampToEmbedFooter(embed, date = new Date()) {
     return;
   }
   const existing = String(embed.footer.text || '').trim();
-  embed.footer.text = existing ? `${existing}\n${stamp}` : stamp;
+  if (!existing) {
+    embed.footer.text = stamp;
+    return;
+  }
+  // Avoid accumulating "Sent:" lines if we re-render/edit an embed.
+  const lines = existing.split('\n').map((l) => l.trimEnd());
+  const kept = lines.filter((l) => !/^Sent:\s+/i.test(l.trim()));
+  kept.push(stamp);
+  embed.footer.text = kept.join('\n').trim();
 }
 
 function patchLinkButtons(components, url) {
