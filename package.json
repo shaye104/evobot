@@ -6,7 +6,11 @@
   "type": "commonjs",
   "scripts": {
     "start": "node index.js",
-    "import-purchases": "node scripts/import-purchases.js"
+    "import-purchases": "node scripts/import-purchases.js",
+    "npm:update": "npm i -g npm@11.9.0",
+    "deps:clean": "rm -rf node_modules package-lock.json && npm install",
+    "audit": "npm audit",
+    "audit:fix": "npm audit fix"
   },
   "dependencies": {
     "discord.js": "^14.15.3",
