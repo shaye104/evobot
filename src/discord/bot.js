@@ -271,6 +271,9 @@ async function startDiscordBot() {
 
     const events = await supportApi.listWebhookEvents(state.last_audit_event_id).catch(() => []);
     if (!Array.isArray(events) || !events.length) return;
+    console.log(
+      `[discord] Ticket events: fetched ${events.length} event(s) since id ${state.last_audit_event_id}`
+    );
 
     const base = (CONFIG.SUPPORT_API_BASE || CONFIG.BASE_URL || '').replace(/\/$/, '');
     async function fetchNotifyChannel(channelId) {
@@ -446,6 +449,24 @@ async function startDiscordBot() {
       .setName('ticket')
       .setDescription('Open a support ticket in DMs');
 
+    const botDebugCommand = new SlashCommandBuilder()
+      .setName('botdebug')
+      .setDescription(
+        'Admin: view bot config/state and test notification channels'
+      )
+      .addStringOption((opt) =>
+        opt
+          .setName('action')
+          .setDescription('Action to perform')
+          .setRequired(false)
+          .addChoices(
+            { name: 'status', value: 'status' },
+            { name: 'test_open_channel', value: 'test_open_channel' },
+            { name: 'test_escalate_channel', value: 'test_escalate_channel' },
+            { name: 'reset_event_cursor', value: 'reset_event_cursor' }
+          )
+      );
+
     const rest = new REST({ version: '10' }).setToken(CONFIG.DISCORD_BOT_TOKEN);
     const data = [
       linkCommand.toJSON(),
@@ -453,6 +474,7 @@ async function startDiscordBot() {
       reprintCommand.toJSON(),
       lookupCommand.toJSON(),
       ticketCommand.toJSON(),
+      botDebugCommand.toJSON(),
     ];
 
     if (CONFIG.DISCORD_COMMAND_GUILD_ID) {
@@ -630,6 +652,76 @@ async function startDiscordBot() {
     }
 
     if (!interaction.isChatInputCommand()) return;
+
+    if (interaction.commandName === 'botdebug') {
+      if (!interaction.inGuild()) {
+        return interaction.reply({
+          content: 'This command can only be used in the server.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+      if (!interaction.memberPermissions?.has('ManageGuild')) {
+        return interaction.reply({
+          content: 'You do not have permission to use this command.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const action = interaction.options.getString('action') || 'status';
+      const state = await loadBotState();
+      const base = (CONFIG.SUPPORT_API_BASE || CONFIG.BASE_URL || '').trim();
+      const authReady = supportApi.isBotAuthReady();
+
+      if (action === 'reset_event_cursor') {
+        state.last_audit_event_id = null;
+        await saveBotState(state);
+      }
+
+      const openChannelId =
+        CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID ||
+        CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
+      const escalateChannelId =
+        CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID ||
+        CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
+
+      async function testChannel(channelId, label) {
+        if (!channelId) return `${label}: not set`;
+        try {
+          const ch = await client.channels.fetch(channelId);
+          if (!ch) return `${label}: not found`;
+          if (!ch.isTextBased()) return `${label}: not text-based`;
+          await ch.send('Bot test: notification channel is reachable.');
+          return `${label}: ok`;
+        } catch (err) {
+          return `${label}: error (${err.message})`;
+        }
+      }
+
+      let testResult = '';
+      if (action === 'test_open_channel') {
+        testResult = await testChannel(openChannelId, 'open_channel');
+      } else if (action === 'test_escalate_channel') {
+        testResult = await testChannel(escalateChannelId, 'escalate_channel');
+      }
+
+      const lines = [
+        `auth_ready: ${authReady}`,
+        `support_api_base: ${base || '(empty)'}`,
+        `bot_api_token_set: ${Boolean(CONFIG.BOT_API_TOKEN)}`,
+        `notify_channel_default: ${CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID || '(empty)'}`,
+        `ticket_open_channel: ${CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID || '(empty)'} (effective: ${openChannelId || '(empty)'})`,
+        `ticket_escalate_channel: ${CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID || '(empty)'} (effective: ${escalateChannelId || '(empty)'})`,
+        `last_staff_message_id: ${state.last_staff_message_id ?? '(null)'}`,
+        `last_audit_event_id: ${state.last_audit_event_id ?? '(null)'}`,
+        testResult ? `test: ${testResult}` : null,
+        action === 'reset_event_cursor' ? 'event cursor reset: done' : null,
+      ].filter(Boolean);
+
+      return interaction.reply({
+        content: `\`\`\`\n${lines.join('\n')}\n\`\`\``,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
 
     if (interaction.commandName === 'ticket') {
       if (!supportApi.isBotAuthReady()) {
