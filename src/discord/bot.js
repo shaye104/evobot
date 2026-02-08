@@ -519,6 +519,51 @@ async function startDiscordBot() {
           const panelName = String(ev.panel_name || 'Unknown').trim() || 'Unknown';
           const claimedBy = String(ev.claimed_by_name || 'Nobody').trim() || 'Nobody';
 
+          const maybeDmAssignedUser = async () => {
+            if (ev.action !== 'ticket.claim') return;
+            if (!ev.creator_discord_id) return;
+            try {
+              const userDm = await client.users.fetch(String(ev.creator_discord_id));
+              const tAssign = templates.get('👤 Ticket Assigned');
+              const userTicketUrl = `${base}/ticket.html?id=${encodeURIComponent(publicId)}`;
+              const agent = String(ev.claimed_by_name || ev.actor_name || 'Staff').trim() || 'Staff';
+              if (tAssign) {
+                const dmPayload = renderTemplate(tAssign, {
+                  ticketUrl: userTicketUrl,
+                  replacements: {
+                    ID: publicId,
+                    username: agent,
+                  },
+                  now: new Date(),
+                });
+                await userDm.send({
+                  content: dmPayload.content,
+                  embeds: dmPayload.embeds,
+                  components: dmPayload.components,
+                });
+              } else {
+                const embed = new EmbedBuilder()
+                  .setTitle('Ticket Assigned')
+                  .setDescription('Your ticket is now being handled by a support agent.')
+                  .setColor(0x3484ff)
+                  .addFields(
+                    { name: 'Ticket ID', value: `\`\`${publicId}\`\``, inline: true },
+                    { name: 'Assigned Agent', value: `\`\`${agent}\`\``, inline: true }
+                  )
+                  .setFooter({ text: new Date().toLocaleString('en-GB', { hour12: false }) });
+                const row = new ActionRowBuilder().addComponents(
+                  new ButtonBuilder()
+                    .setStyle(ButtonStyle.Link)
+                    .setLabel('Open Ticket')
+                    .setURL(userTicketUrl)
+                );
+                await userDm.send({ embeds: [embed], components: [row] });
+              }
+            } catch (err) {
+              console.warn(`[discord] Ticket assigned DM failed: ${err.message}`);
+            }
+          };
+
           const payload = t
             ? renderTemplate(t, {
                 ticketUrl: staffTicketUrl,
@@ -547,49 +592,7 @@ async function startDiscordBot() {
                   embeds: payload.embeds,
                   components: payload.components,
                 });
-                // After claim, DM the ticket creator that their ticket has been assigned.
-                if (ev.action === 'ticket.claim' && ev.creator_discord_id) {
-                  try {
-                    const userDm = await client.users.fetch(String(ev.creator_discord_id));
-                    const tAssign = templates.get('👤 Ticket Assigned');
-                    const userTicketUrl = `${base}/ticket.html?id=${encodeURIComponent(publicId)}`;
-                    const agent = String(ev.claimed_by_name || ev.actor_name || 'Staff').trim() || 'Staff';
-                    if (tAssign) {
-                      const dmPayload = renderTemplate(tAssign, {
-                        ticketUrl: userTicketUrl,
-                        replacements: {
-                          ID: publicId,
-                          username: agent,
-                        },
-                        now: new Date(),
-                      });
-                      await userDm.send({
-                        content: dmPayload.content,
-                        embeds: dmPayload.embeds,
-                        components: dmPayload.components,
-                      });
-                    } else {
-                      const embed = new EmbedBuilder()
-                        .setTitle('Ticket Assigned')
-                        .setDescription('Your ticket is now being handled by a support agent.')
-                        .setColor(0x3484ff)
-                        .addFields(
-                          { name: 'Ticket ID', value: `\`\`${publicId}\`\``, inline: true },
-                          { name: 'Assigned Agent', value: `\`\`${agent}\`\``, inline: true }
-                        )
-                        .setFooter({ text: new Date().toLocaleString('en-GB', { hour12: false }) });
-                      const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder()
-                          .setStyle(ButtonStyle.Link)
-                          .setLabel('Open Ticket')
-                          .setURL(userTicketUrl)
-                      );
-                      await userDm.send({ embeds: [embed], components: [row] });
-                    }
-                  } catch (err) {
-                    console.warn(`[discord] Ticket assigned DM failed: ${err.message}`);
-                  }
-                }
+                await maybeDmAssignedUser();
                 continue;
               }
             } catch {
@@ -607,6 +610,7 @@ async function startDiscordBot() {
             state.ticket_open_message_ids = state.ticket_open_message_ids || {};
             state.ticket_open_message_ids[publicId] = String(sent.id);
             await saveBotState(state);
+            await maybeDmAssignedUser();
           }
         }
       } catch (err) {
