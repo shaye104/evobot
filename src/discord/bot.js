@@ -688,20 +688,14 @@ async function startDiscordBot() {
       const pending = purchasesForUser.find((p) => !p.redeemed_at);
       const alreadyLinked = purchasesForUser.find((p) => p.redeemed_at);
 
-      const guild = await client.guilds.fetch(CONFIG.DISCORD_GUILD_ID);
-      let member;
-      try {
-        member = await guild.members.fetch(interaction.user.id);
-      } catch {
-        return interaction.reply({
-          content: 'You need to join the server before I can assign your role.',
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      const hasRole = member.roles.cache.has(CONFIG.DISCORD_ROLE_ID);
-
-      if (interaction.commandName === 'lookup') {
+      // Admin-only commands: do not require role assignment or member fetching.
+      if (interaction.commandName === 'lookup' || interaction.commandName === 'reprint') {
+        if (!interaction.inGuild()) {
+          return interaction.reply({
+            content: 'This command can only be used in the server.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
         if (!interaction.memberPermissions?.has('ManageGuild')) {
           return interaction.reply({
             content: 'You do not have permission to use this command.',
@@ -721,29 +715,11 @@ async function startDiscordBot() {
           });
         }
 
-        const embed = payhip.buildOrderEmbedFromOrder(order);
-        await payhip.attachDiscordThumbnail(embed, order.discord_id);
-        await interaction.reply({
-          embeds: [embed],
-          flags: MessageFlags.Ephemeral,
-        });
-      }
-
-      if (interaction.commandName === 'reprint') {
-        if (!interaction.memberPermissions?.has('ManageGuild')) {
+        if (interaction.commandName === 'lookup') {
+          const embed = payhip.buildOrderEmbedFromOrder(order);
+          await payhip.attachDiscordThumbnail(embed, order.discord_id);
           return interaction.reply({
-            content: 'You do not have permission to use this command.',
-            flags: MessageFlags.Ephemeral,
-          });
-        }
-        const orderId = interaction.options.getString('order_id', true).trim();
-        const order = dbEnabled
-          ? await payhip.dbGetPurchaseById(orderId)
-          : purchasesById.get(orderId);
-
-        if (!order) {
-          return interaction.reply({
-            content: `No order found for ID: ${orderId}`,
+            embeds: [embed],
             flags: MessageFlags.Ephemeral,
           });
         }
@@ -757,6 +733,19 @@ async function startDiscordBot() {
           flags: MessageFlags.Ephemeral,
         });
       }
+
+      const guild = await client.guilds.fetch(CONFIG.DISCORD_GUILD_ID);
+      let member;
+      try {
+        member = await guild.members.fetch(interaction.user.id);
+      } catch {
+        return interaction.reply({
+          content: 'You need to join the server before I can assign your role.',
+          flags: MessageFlags.Ephemeral,
+        });
+      }
+
+      const hasRole = member.roles.cache.has(CONFIG.DISCORD_ROLE_ID);
 
       if (interaction.commandName === 'link') {
         if (!pending) {
@@ -846,10 +835,10 @@ async function startDiscordBot() {
         flags: MessageFlags.Ephemeral,
       });
     } catch (err) {
-      console.error(`[discord] /link failed: ${err.message}`);
+      console.error(`[discord] /${interaction.commandName} failed: ${err.message}`);
       return interaction.reply({
         content:
-          'Something went wrong while assigning your role. Please contact support.',
+          'Something went wrong while processing that command. Please contact support.',
         flags: MessageFlags.Ephemeral,
       });
     }
