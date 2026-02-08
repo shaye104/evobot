@@ -100,6 +100,17 @@ async function listStaffReplies(sinceId) {
   };
 }
 
+async function listClaimedUserMessages(sinceId) {
+  const data = await fetchJson(
+    `/api/bot/claimed-messages?since_id=${Number(sinceId || 0)}`,
+    { auth: true }
+  );
+  return {
+    messages: data.messages || [],
+    attachments: data.attachments || [],
+  };
+}
+
 async function requestResponsePings() {
   const data = await fetchJson('/api/bot/request-response', { auth: true });
   return data.requests || [];
@@ -128,6 +139,7 @@ module.exports = {
   listActiveDiscordTickets,
   sendDiscordTicketMessage,
   listStaffReplies,
+  listClaimedUserMessages,
   requestResponsePings,
   ackResponsePing,
   listWebhookEvents,

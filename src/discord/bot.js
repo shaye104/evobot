@@ -136,12 +136,14 @@ async function startDiscordBot() {
       const parsed = JSON.parse(raw);
       return {
         last_staff_message_id: parsed.last_staff_message_id ?? null,
+        last_claimed_user_message_id: parsed.last_claimed_user_message_id ?? null,
         last_audit_event_id: parsed.last_audit_event_id ?? null,
         ticket_open_message_ids: parsed.ticket_open_message_ids || {},
       };
     } catch {
       return {
         last_staff_message_id: null,
+        last_claimed_user_message_id: null,
         last_audit_event_id: null,
         ticket_open_message_ids: {},
       };
@@ -251,6 +253,101 @@ async function startDiscordBot() {
     }
 
     state.last_staff_message_id = Math.max(...messages.map((msg) => msg.id));
+    await saveBotState(state);
+  }
+
+  async function syncClaimedUserMessages() {
+    if (!supportApi.isBotAuthReady()) return;
+
+    const state = await loadBotState();
+    if (state.last_claimed_user_message_id == null) {
+      const { messages } = await supportApi.listClaimedUserMessages(0);
+      state.last_claimed_user_message_id = messages.length
+        ? Math.max(...messages.map((m) => m.id))
+        : 0;
+      await saveBotState(state);
+      return;
+    }
+
+    const { messages, attachments } = await supportApi.listClaimedUserMessages(
+      state.last_claimed_user_message_id
+    );
+    if (!messages.length) return;
+
+    const attachmentsByMessage = new Map();
+    for (const attachment of attachments || []) {
+      if (!attachment.ticket_message_id) continue;
+      if (!attachmentsByMessage.has(attachment.ticket_message_id)) {
+        attachmentsByMessage.set(attachment.ticket_message_id, []);
+      }
+      attachmentsByMessage
+        .get(attachment.ticket_message_id)
+        .push(attachment);
+    }
+
+    for (const msg of messages) {
+      const staffDiscordId = String(msg.staff_discord_id || '').trim();
+      if (!staffDiscordId) continue;
+      try {
+        const staffUser = await client.users.fetch(staffDiscordId);
+        if (!staffUser) continue;
+
+        const files = (attachmentsByMessage.get(msg.id) || [])
+          .filter((att) => att.storage_url)
+          .map((att) => ({
+            attachment: att.storage_url,
+            name: att.filename || 'attachment',
+          }));
+
+        const base = (CONFIG.SUPPORT_API_BASE || CONFIG.BASE_URL || '').replace(/\/$/, '');
+        const staffTicketUrl = `${base}/staff-ticket.html?id=${encodeURIComponent(String(msg.public_id || ''))}`;
+        const body = String(msg.body || '').trim();
+        const preview = body.replace(/\s+/g, ' ').slice(0, 90) || 'New message';
+        const sender = String(msg.author_name || 'User').trim() || 'User';
+
+        const template = templates.get('📩 New Message Received');
+        if (template) {
+          const payload = renderTemplate(template, {
+            ticketUrl: staffTicketUrl,
+            replacements: {
+              ID: String(msg.public_id || ''),
+              Username: sender,
+              'Short message preview': preview,
+            },
+            now: new Date(),
+          });
+          await staffUser.send({
+            content: payload.content,
+            embeds: payload.embeds,
+            components: payload.components,
+            files: files.length ? files : undefined,
+          });
+        } else {
+          const embed = new EmbedBuilder()
+            .setTitle('New user message')
+            .setDescription(body.slice(0, 3500) || 'New message')
+            .setColor(0x3484ff)
+            .setFooter({ text: new Date().toLocaleString('en-GB', { hour12: false }) });
+
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setStyle(ButtonStyle.Link)
+              .setLabel('Open ticket')
+              .setURL(staffTicketUrl)
+          );
+
+          await staffUser.send({
+            embeds: [embed],
+            components: [row],
+            files: files.length ? files : undefined,
+          });
+        }
+      } catch (err) {
+        console.warn(`[discord] DM claimed-ticket update failed: ${err.message}`);
+      }
+    }
+
+    state.last_claimed_user_message_id = Math.max(...messages.map((m) => m.id));
     await saveBotState(state);
   }
 
@@ -603,12 +700,20 @@ async function startDiscordBot() {
       syncStaffReplies().catch((err) => {
         console.warn(`[discord] Staff reply sync failed: ${err.message}`);
       });
+      syncClaimedUserMessages().catch((err) => {
+        console.warn(`[discord] Claimed message sync failed: ${err.message}`);
+      });
       syncWebhookTicketEvents().catch((err) => {
         console.warn(`[discord] Webhook event sync failed: ${err.message}`);
       });
       setInterval(() => {
         syncStaffReplies().catch((err) => {
           console.warn(`[discord] Staff reply sync failed: ${err.message}`);
+        });
+      }, CONFIG.BOT_SYNC_INTERVAL_MS);
+      setInterval(() => {
+        syncClaimedUserMessages().catch((err) => {
+          console.warn(`[discord] Claimed message sync failed: ${err.message}`);
         });
       }, CONFIG.BOT_SYNC_INTERVAL_MS);
       setInterval(() => {
@@ -752,6 +857,18 @@ async function startDiscordBot() {
         apiProbe = 'api_probe_events: skipped (auth not ready)';
       }
 
+      let apiProbeClaimed = '';
+      if (authReady) {
+        try {
+          const { messages } = await supportApi.listClaimedUserMessages(0);
+          apiProbeClaimed = `api_probe_claimed_messages: ok (${Array.isArray(messages) ? messages.length : 0} messages)`;
+        } catch (err) {
+          apiProbeClaimed = `api_probe_claimed_messages: ${String(err?.message || err)}`;
+        }
+      } else {
+        apiProbeClaimed = 'api_probe_claimed_messages: skipped (auth not ready)';
+      }
+
       if (action === 'reset_event_cursor') {
         state.last_audit_event_id = null;
         await saveBotState(state);
@@ -789,10 +906,12 @@ async function startDiscordBot() {
         `support_api_base: ${base || '(empty)'}`,
         `bot_api_token_set: ${Boolean(CONFIG.BOT_API_TOKEN)}`,
         apiProbe,
+        apiProbeClaimed,
         `notify_channel_default: ${CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID || '(empty)'}`,
         `ticket_open_channel: ${CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID || '(empty)'} (effective: ${openChannelId || '(empty)'})`,
         `ticket_escalate_channel: ${CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID || '(empty)'} (effective: ${escalateChannelId || '(empty)'})`,
         `last_staff_message_id: ${state.last_staff_message_id ?? '(null)'}`,
+        `last_claimed_user_message_id: ${state.last_claimed_user_message_id ?? '(null)'}`,
         `last_audit_event_id: ${state.last_audit_event_id ?? '(null)'}`,
         testResult ? `test: ${testResult}` : null,
         action === 'reset_event_cursor' ? 'event cursor reset: done' : null,
