@@ -151,17 +151,24 @@ async function apiRequest(path, { method = 'GET', body } = {}) {
 
   if (!res.ok) {
     const message = payload?.error || res.statusText || 'Request failed';
-    throw new Error(`Payhip API ${res.status}: ${message}`);
+    // This is the support website API (Cloudflare Pages Functions), not Payhip's API.
+    throw new Error(`Support API ${res.status}: ${message}`);
   }
   return payload || {};
 }
 
 async function dbGetPurchaseById(transactionId) {
   if (isApiConfigured()) {
-    const data = await apiRequest(
-      `/api/bot/purchases/${encodeURIComponent(transactionId)}`
-    );
-    return data.purchase || null;
+    try {
+      const data = await apiRequest(
+        `/api/bot/purchases/${encodeURIComponent(transactionId)}`
+      );
+      return data.purchase || null;
+    } catch (err) {
+      // For lookups, treat missing purchases as a normal "not found" state.
+      if (String(err?.message || '').includes('Support API 404')) return null;
+      throw err;
+    }
   }
 
   const pool = await getDbPool();
