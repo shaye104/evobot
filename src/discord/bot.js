@@ -251,7 +251,13 @@ async function startDiscordBot() {
 
   async function syncWebhookTicketEvents() {
     if (!supportApi.isBotAuthReady()) return;
-    if (!CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID) return;
+    if (
+      !CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID &&
+      !CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID &&
+      !CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID
+    ) {
+      return;
+    }
 
     const state = await loadBotState();
     if (state.last_audit_event_id == null) {
@@ -267,11 +273,16 @@ async function startDiscordBot() {
     if (!Array.isArray(events) || !events.length) return;
 
     const base = (CONFIG.SUPPORT_API_BASE || CONFIG.BASE_URL || '').replace(/\/$/, '');
-    let channel = null;
-    try {
-      channel = await client.channels.fetch(CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID);
-    } catch {}
-    if (!channel || !channel.isTextBased()) return;
+    async function fetchNotifyChannel(channelId) {
+      if (!channelId) return null;
+      try {
+        const ch = await client.channels.fetch(channelId);
+        return ch && ch.isTextBased() ? ch : null;
+      } catch (err) {
+        console.warn(`[discord] Notify channel fetch failed (${channelId}): ${err.message}`);
+        return null;
+      }
+    }
 
     for (const ev of events) {
       const publicId = String(ev.public_id || '').trim();
@@ -281,6 +292,12 @@ async function startDiscordBot() {
 
       try {
         if (ev.action === 'ticket.created') {
+          const channelId =
+            CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID ||
+            CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
+          const channel = await fetchNotifyChannel(channelId);
+          if (!channel) continue;
+
           const t = templates.get('🎫 Ticket Opened');
           const openedBy = String(ev.opened_by_name || 'User').trim() || 'User';
           const panelName = String(ev.panel_name || 'Unknown').trim() || 'Unknown';
@@ -325,6 +342,12 @@ async function startDiscordBot() {
             components: payload.components,
           });
         } else if (ev.action === 'ticket.escalate') {
+          const channelId =
+            CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID ||
+            CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
+          const channel = await fetchNotifyChannel(channelId);
+          if (!channel) continue;
+
           const t = templates.get('🚨 Ticket Escalated');
           const escalatedBy = String(ev.actor_name || 'Staff').trim() || 'Staff';
           const toPanel = String(ev.to_panel_name || ev.panel_name || 'Unknown').trim() || 'Unknown';
