@@ -672,6 +672,18 @@ async function startDiscordBot() {
       const base = (CONFIG.SUPPORT_API_BASE || CONFIG.BASE_URL || '').trim();
       const authReady = supportApi.isBotAuthReady();
 
+      let apiProbe = '';
+      if (authReady) {
+        try {
+          const ev = await supportApi.listWebhookEvents(0);
+          apiProbe = `api_probe_events: ok (${Array.isArray(ev) ? ev.length : 0} events)`;
+        } catch (err) {
+          apiProbe = `api_probe_events: ${String(err?.message || err)}`;
+        }
+      } else {
+        apiProbe = 'api_probe_events: skipped (auth not ready)';
+      }
+
       if (action === 'reset_event_cursor') {
         state.last_audit_event_id = null;
         await saveBotState(state);
@@ -708,6 +720,7 @@ async function startDiscordBot() {
         `auth_ready: ${authReady}`,
         `support_api_base: ${base || '(empty)'}`,
         `bot_api_token_set: ${Boolean(CONFIG.BOT_API_TOKEN)}`,
+        apiProbe,
         `notify_channel_default: ${CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID || '(empty)'}`,
         `ticket_open_channel: ${CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID || '(empty)'} (effective: ${openChannelId || '(empty)'})`,
         `ticket_escalate_channel: ${CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID || '(empty)'} (effective: ${escalateChannelId || '(empty)'})`,
