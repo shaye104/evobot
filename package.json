@@ -1,0 +1,16 @@
+{
+  "name": "payhip-discord-link",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js",
+    "import-purchases": "node scripts/import-purchases.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.3",
+    "dotenv": "^17.2.2",
+    "mysql2": "^3.12.0"
+  }
+}

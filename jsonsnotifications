@@ -1,0 +1,270 @@
+{
+  "embeds": [
+    {
+      "title": "📩 New Message Received",
+      "description": "There is a new message waiting for you.",
+      "fields": [
+        {
+          "name": "Ticket ID",
+          "value": "``ID``",
+          "inline": true
+        },
+        {
+          "name": "Sender",
+          "value": "``Username``",
+          "inline": true
+        },
+        {
+          "name": "Preview",
+          "value": "``Short message preview``",
+          "inline": true
+        }
+      ],
+      "footer": {
+        "text": "To have your issue resolved as quickly, please respond as soon as possible."
+      },
+      "color": 3447003
+    }
+  ],
+  "components": [
+    {
+      "type": 1,
+      "components": [
+        {
+          "type": 2,
+          "style": 5,
+          "url": "https://link",
+          "custom_id": "p_267600408036249752",
+          "label": "Open Ticket"
+        }
+      ]
+    }
+  ]
+}
+
+
+
+
+{
+  "embeds": [
+    {
+      "title": "🔄 Ticket Status Updated",
+      "description": "The status of your ticket has been updated.",
+      "fields": [
+        {
+          "name": "Ticket ID",
+          "value": "``ID``",
+          "inline": true
+        },
+        {
+          "name": "Previous Status",
+          "value": "``previous status``",
+          "inline": true
+        },
+        {
+          "name": "New Status",
+          "value": "``new status``",
+          "inline": true
+        },
+        {
+          "name": "Updated By",
+          "value": "``username``"
+        }
+      ],
+      "color": 3447003
+    }
+  ],
+  "components": [
+    {
+      "type": 1,
+      "components": [
+        {
+          "type": 2,
+          "style": 5,
+          "url": "https://link",
+          "custom_id": "p_267600408036249752",
+          "label": "Open Ticket"
+        }
+      ]
+    }
+  ]
+}
+
+
+
+
+{
+  "embeds": [
+    {
+      "title": "👤 Ticket Assigned",
+      "description": "Your ticket is now being handled by a support agent.",
+      "fields": [
+        {
+          "name": "Ticket ID",
+          "value": "``ID``",
+          "inline": true
+        },
+        {
+          "name": "Assigned Agent",
+          "value": "``username``",
+          "inline": true
+        }
+      ],
+      "color": 3447003
+    }
+  ],
+  "components": [
+    {
+      "type": 1,
+      "components": [
+        {
+          "type": 2,
+          "style": 5,
+          "url": "https://link",
+          "custom_id": "p_267600408036249752",
+          "label": "Open Ticket"
+        }
+      ]
+    }
+  ]
+}
+
+
+
+
+
+{
+  "embeds": [
+    {
+      "title": "⏰ Response Requested",
+      "description": "A support agent has requested you to respond to your ticket.",
+      "fields": [
+        {
+          "name": "Ticket ID",
+          "value": "``ID``",
+          "inline": true
+        },
+        {
+          "name": "Assigned Agent",
+          "value": "``username``",
+          "inline": true
+        },
+        {
+          "name": "Time Since Last Reply",
+          "value": "``elapsed time``",
+          "inline": false
+        }
+      ],
+      "footer": {
+        "text": "To prevent delays and to keep your ticket active, please respond in a timely manner."
+      },
+      "color": 3447003
+    }
+  ],
+  "components": [
+    {
+      "type": 1,
+      "components": [
+        {
+          "type": 2,
+          "style": 5,
+          "url": "https://link",
+          "custom_id": "p_267600408036249752",
+          "label": "Open Ticket"
+        }
+      ]
+    }
+  ]
+}
+
+
+
+
+
+{
+  "embeds": [
+    {
+      "title": "🎫 Ticket Opened",
+      "description": "A new support ticket has been created and is awaiting review.",
+      "fields": [
+        {
+          "name": "Ticket ID",
+          "value": "``ID``",
+          "inline": true
+        },
+        {
+          "name": "Ticket Panel",
+          "value": "``panel name``",
+          "inline": true
+        },
+        {
+          "name": "Opened By",
+          "value": "``username``",
+          "inline": true
+        },
+        {
+          "name": "Claimed By",
+          "value": "``nobody/usernane``"
+        }
+      ],
+      "color": 3447003
+    }
+  ],
+  "components": [
+    {
+      "type": 1,
+      "components": [
+        {
+          "type": 2,
+          "style": 5,
+          "url": "https://link/staff",
+          "custom_id": "p_267600408036249752",
+          "label": "Open Ticket"
+        }
+      ]
+    }
+  ]
+}
+
+
+
+{
+  "embeds": [
+    {
+      "title": "🚨 Ticket Escalated",
+      "description": "A ticket has been escalated to another panel.",
+      "fields": [
+        {
+          "name": "Ticket ID",
+          "value": "``ID``",
+          "inline": true
+        },
+        {
+          "name": "Escalated By",
+          "value": "``username``",
+          "inline": true
+        },
+        {
+          "name": "Escalated To",
+          "value": "``panel name``",
+          "inline": true
+        }
+      ],
+      "color": 3447003
+    }
+  ],
+  "components": [
+    {
+      "type": 1,
+      "components": [
+        {
+          "type": 2,
+          "style": 5,
+          "url": "https://link/staff",
+          "custom_id": "p_267600408036249752",
+          "label": "Open Ticket"
+        }
+      ]
+    }
+  ]
+}
