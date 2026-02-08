@@ -99,9 +99,28 @@ function patchLinkButtons(components, url) {
 
 function replacePlaceholdersInString(str, replacements) {
   let out = str;
-  for (const [needle, value] of Object.entries(replacements)) {
-    out = out.split(needle).join(String(value ?? ''));
+  const rep = replacements || {};
+
+  // 1) Legacy exact-string replacement support (e.g. needles like "``ID``").
+  for (const [needle, value] of Object.entries(rep)) {
+    out = out.split(String(needle)).join(String(value ?? ''));
   }
+
+  // 2) Template-friendly replacement for placeholders inside double-backticks, e.g. ``ID``.
+  // This preserves the original formatting (the backticks) from the template.
+  // We match whatever is inside ``...`` and swap the inside if we have a value.
+  const normalized = new Map();
+  for (const [k, v] of Object.entries(rep)) {
+    normalized.set(String(k).trim().toLowerCase(), String(v ?? ''));
+  }
+  out = out.replace(/``([^`]+)``/g, (full, inner) => {
+    const key = String(inner || '').trim().toLowerCase();
+    if (!key) return full;
+    if (!normalized.has(key)) return full;
+    const value = normalized.get(key);
+    return `\`\`${value}\`\``;
+  });
+
   return out;
 }
 

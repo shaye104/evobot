@@ -206,13 +206,14 @@ async function startDiscordBot() {
           const payload = renderTemplate(template, {
             ticketUrl,
             replacements: {
-              '``ID``': `\`\`${msg.public_id || ''}\`\``,
-              '``Username``': `\`\`${sender}\`\``,
-              '``Short message preview``': `\`\`${preview}\`\``,
+              ID: String(msg.public_id || ''),
+              Username: sender,
+              'Short message preview': preview,
             },
             now: new Date(),
           });
           await user.send({
+            content: payload.content,
             embeds: payload.embeds,
             components: payload.components,
             files: files.length ? files : undefined,
@@ -289,10 +290,10 @@ async function startDiscordBot() {
             ? renderTemplate(t, {
                 ticketUrl: staffTicketUrl,
                 replacements: {
-                  '``ID``': `\`\`${publicId}\`\``,
-                  '``panel name``': `\`\`${panelName}\`\``,
-                  '``username``': `\`\`${openedBy}\`\``,
-                  '``nobody/usernane``': `\`\`${claimedBy}\`\``,
+                  ID: publicId,
+                  'panel name': panelName,
+                  username: openedBy,
+                  'nobody/usernane': claimedBy,
                 },
                 now: new Date(),
               })
@@ -332,9 +333,9 @@ async function startDiscordBot() {
             ? renderTemplate(t, {
                 ticketUrl: staffTicketUrl,
                 replacements: {
-                  '``ID``': `\`\`${publicId}\`\``,
-                  '``username``': `\`\`${escalatedBy}\`\``,
-                  '``panel name``': `\`\`${toPanel}\`\``,
+                  ID: publicId,
+                  username: escalatedBy,
+                  'panel name': toPanel,
                 },
                 now: new Date(),
               })
@@ -534,9 +535,9 @@ async function startDiscordBot() {
                 const payload = renderTemplate(template, {
                   ticketUrl,
                   replacements: {
-                    '``ID``': `\`\`${r.public_id || ''}\`\``,
-                    '``username``': `\`\`${requestedBy}\`\``,
-                    '``elapsed time``': `\`\`${elapsed}\`\``,
+                    ID: String(r.public_id || ''),
+                    username: requestedBy,
+                    'elapsed time': elapsed,
                   },
                   now: new Date(),
                 });
