@@ -44,7 +44,10 @@ async function fetchJson(path, { method = 'GET', body, auth = false } = {}) {
 
   if (!res.ok) {
     const message = payload?.error || res.statusText || 'Request failed';
-    throw new Error(`Support API ${res.status}: ${message}`);
+    const err = new Error(`Support API ${res.status}: ${message}`);
+    err.status = res.status;
+    err.path = path;
+    throw err;
   }
 
   return payload || {};
@@ -90,38 +93,66 @@ async function sendDiscordTicketMessage(publicId, { discordId, message, attachme
 }
 
 async function listStaffReplies(sinceId) {
-  const data = await fetchJson(
-    `/api/bot/messages?since_id=${Number(sinceId || 0)}`,
-    { auth: true }
-  );
-  return {
-    messages: data.messages || [],
-    attachments: data.attachments || [],
-  };
+  try {
+    const data = await fetchJson(
+      `/api/bot/messages?since_id=${Number(sinceId || 0)}`,
+      { auth: true }
+    );
+    return {
+      messages: data.messages || [],
+      attachments: data.attachments || [],
+    };
+  } catch (err) {
+    // Older Support API deployments may not include bot-sync endpoints yet.
+    if (err?.status === 404) {
+      return { messages: [], attachments: [] };
+    }
+    throw err;
+  }
 }
 
 async function listClaimedUserMessages(sinceId) {
-  const data = await fetchJson(
-    `/api/bot/claimed-messages?since_id=${Number(sinceId || 0)}`,
-    { auth: true }
-  );
-  return {
-    messages: data.messages || [],
-    attachments: data.attachments || [],
-  };
+  try {
+    const data = await fetchJson(
+      `/api/bot/claimed-messages?since_id=${Number(sinceId || 0)}`,
+      { auth: true }
+    );
+    return {
+      messages: data.messages || [],
+      attachments: data.attachments || [],
+    };
+  } catch (err) {
+    if (err?.status === 404) {
+      return { messages: [], attachments: [] };
+    }
+    throw err;
+  }
 }
 
 async function requestResponsePings() {
-  const data = await fetchJson('/api/bot/request-response', { auth: true });
-  return data.requests || [];
+  try {
+    const data = await fetchJson('/api/bot/request-response', { auth: true });
+    return data.requests || [];
+  } catch (err) {
+    if (err?.status === 404) return [];
+    throw err;
+  }
 }
 
 async function ackResponsePing(id) {
-  return fetchJson(`/api/bot/request-response/${encodeURIComponent(String(id))}`, {
-    method: 'POST',
-    auth: true,
-    body: {},
-  });
+  try {
+    return await fetchJson(
+      `/api/bot/request-response/${encodeURIComponent(String(id))}`,
+      {
+        method: 'POST',
+        auth: true,
+        body: {},
+      }
+    );
+  } catch (err) {
+    if (err?.status === 404) return { ok: true };
+    throw err;
+  }
 }
 
 async function listWebhookEvents(sinceId) {

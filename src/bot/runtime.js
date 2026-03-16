@@ -40,6 +40,20 @@ const BOT_STATE_PATH = (() => {
   return path.join(cwd, 'data', 'bot_state.json');
 })();
 
+function toFiniteIntOrNull(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
+function maxNumericId(items) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+  const nums = items
+    .map((item) => Number(item?.id))
+    .filter((n) => Number.isFinite(n));
+  if (!nums.length) return null;
+  return Math.max(...nums);
+}
+
 async function startDiscordBot() {
   if (!CONFIG.DISCORD_BOT_TOKEN) {
     console.warn('[discord] Bot not started: missing bot token.');
@@ -62,6 +76,38 @@ async function startDiscordBot() {
     ],
     partials: [Partials.Channel],
   });
+  const recentEventKeys = new Map();
+  let warnedMissingEventIds = false;
+
+  function eventSignature(ev) {
+    const numericId = toFiniteIntOrNull(ev?.id);
+    if (numericId != null) return `id:${numericId}`;
+    return [
+      String(ev?.action || ''),
+      String(ev?.public_id || ''),
+      String(ev?.created_at || ''),
+      String(ev?.opened_by_name || ''),
+      String(ev?.claimed_by_name || ''),
+      String(ev?.from_status_name || ''),
+      String(ev?.to_status_name || ''),
+    ].join('|');
+  }
+
+  function seenRecentEvent(sig) {
+    if (!sig) return false;
+    const now = Date.now();
+    const ttlMs = 12 * 60 * 60 * 1000;
+    for (const [key, ts] of recentEventKeys) {
+      if (now - ts > ttlMs) recentEventKeys.delete(key);
+    }
+    if (recentEventKeys.has(sig)) return true;
+    recentEventKeys.set(sig, now);
+    if (recentEventKeys.size > 5000) {
+      const oldest = [...recentEventKeys.entries()].sort((a, b) => a[1] - b[1])[0];
+      if (oldest) recentEventKeys.delete(oldest[0]);
+    }
+    return false;
+  }
 
   function shortPreview(input, maxLen = 20) {
     const text = String(input || '').replace(/\s+/g, ' ').trim();
@@ -148,9 +194,11 @@ async function startDiscordBot() {
       const raw = await fs.promises.readFile(BOT_STATE_PATH, 'utf8');
       const parsed = JSON.parse(raw);
       return {
-        last_staff_message_id: parsed.last_staff_message_id ?? null,
-        last_claimed_user_message_id: parsed.last_claimed_user_message_id ?? null,
-        last_audit_event_id: parsed.last_audit_event_id ?? null,
+        last_staff_message_id: toFiniteIntOrNull(parsed.last_staff_message_id),
+        last_claimed_user_message_id: toFiniteIntOrNull(
+          parsed.last_claimed_user_message_id
+        ),
+        last_audit_event_id: toFiniteIntOrNull(parsed.last_audit_event_id),
         ticket_open_message_ids: parsed.ticket_open_message_ids || {},
       };
     } catch {
@@ -164,10 +212,19 @@ async function startDiscordBot() {
   }
 
   async function saveBotState(state) {
+    const safeState = {
+      ...state,
+      last_staff_message_id: toFiniteIntOrNull(state.last_staff_message_id),
+      last_claimed_user_message_id: toFiniteIntOrNull(
+        state.last_claimed_user_message_id
+      ),
+      last_audit_event_id: toFiniteIntOrNull(state.last_audit_event_id),
+      ticket_open_message_ids: state.ticket_open_message_ids || {},
+    };
     await fs.promises.mkdir(path.dirname(BOT_STATE_PATH), { recursive: true });
     await fs.promises.writeFile(
       BOT_STATE_PATH,
-      JSON.stringify(state, null, 2)
+      JSON.stringify(safeState, null, 2)
     );
   }
 
@@ -177,9 +234,7 @@ async function startDiscordBot() {
     const state = await loadBotState();
     if (state.last_staff_message_id == null) {
       const { messages } = await supportApi.listStaffReplies(0);
-      state.last_staff_message_id = messages.length
-        ? Math.max(...messages.map((msg) => msg.id))
-        : 0;
+      state.last_staff_message_id = maxNumericId(messages) ?? 0;
       await saveBotState(state);
       return;
     }
@@ -265,7 +320,13 @@ async function startDiscordBot() {
       }
     }
 
-    state.last_staff_message_id = Math.max(...messages.map((msg) => msg.id));
+    const maxId = maxNumericId(messages);
+    if (maxId != null) {
+      state.last_staff_message_id = Math.max(
+        Number(state.last_staff_message_id || 0),
+        maxId
+      );
+    }
     await saveBotState(state);
   }
 
@@ -275,9 +336,7 @@ async function startDiscordBot() {
     const state = await loadBotState();
     if (state.last_claimed_user_message_id == null) {
       const { messages } = await supportApi.listClaimedUserMessages(0);
-      state.last_claimed_user_message_id = messages.length
-        ? Math.max(...messages.map((m) => m.id))
-        : 0;
+      state.last_claimed_user_message_id = maxNumericId(messages) ?? 0;
       await saveBotState(state);
       return;
     }
@@ -360,7 +419,13 @@ async function startDiscordBot() {
       }
     }
 
-    state.last_claimed_user_message_id = Math.max(...messages.map((m) => m.id));
+    const maxId = maxNumericId(messages);
+    if (maxId != null) {
+      state.last_claimed_user_message_id = Math.max(
+        Number(state.last_claimed_user_message_id || 0),
+        maxId
+      );
+    }
     await saveBotState(state);
   }
 
@@ -377,15 +442,20 @@ async function startDiscordBot() {
     const state = await loadBotState();
     if (state.last_audit_event_id == null) {
       const events = await supportApi.listWebhookEvents(0).catch(() => []);
-      state.last_audit_event_id = events.length
-        ? Math.max(...events.map((e) => e.id))
-        : 0;
+      state.last_audit_event_id = maxNumericId(events) ?? 0;
       await saveBotState(state);
       return;
     }
 
     const events = await supportApi.listWebhookEvents(state.last_audit_event_id).catch(() => []);
     if (!Array.isArray(events) || !events.length) return;
+    const batchMaxId = maxNumericId(events);
+    if (batchMaxId == null && !warnedMissingEventIds) {
+      warnedMissingEventIds = true;
+      console.warn(
+        '[discord] Webhook events are missing numeric IDs; duplicate suppression fallback enabled.'
+      );
+    }
     console.log(
       `[discord] Ticket events: fetched ${events.length} event(s) since id ${state.last_audit_event_id}`
     );
@@ -405,6 +475,10 @@ async function startDiscordBot() {
     for (const ev of events) {
       const publicId = String(ev.public_id || '').trim();
       if (!publicId) continue;
+      const sig = eventSignature(ev);
+      if (seenRecentEvent(sig)) {
+        continue;
+      }
 
       const staffTicketUrl = `${base}/staff-ticket.html?id=${encodeURIComponent(publicId)}`;
 
@@ -623,7 +697,16 @@ async function startDiscordBot() {
       }
     }
 
-    state.last_audit_event_id = Math.max(...events.map((e) => e.id));
+    const maxId = batchMaxId;
+    if (maxId != null) {
+      state.last_audit_event_id = Math.max(
+        Number(state.last_audit_event_id || 0),
+        maxId
+      );
+    } else if (Number(state.last_audit_event_id || 0) === 0 && events.length > 0) {
+      // Prevent replay storms when upstream events have no usable cursor ID.
+      state.last_audit_event_id = Number.MAX_SAFE_INTEGER;
+    }
     await saveBotState(state);
   }
 
