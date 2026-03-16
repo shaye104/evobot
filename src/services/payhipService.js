@@ -1,11 +1,10 @@
-const crypto = require('crypto');
 const { CONFIG } = require('../config');
 const {
   getDbPool,
   initPayhipDb: initMysqlPayhipDb,
   isDbConfigured: isMysqlConfigured,
-} = require('../db');
-const { loadStoreCached, saveStoreCached, STORE_CACHE } = require('../store');
+} = require('../storage/db');
+const { loadStoreCached, saveStoreCached, STORE_CACHE } = require('../storage/store');
 
 function nowIso() {
   return new Date().toISOString();
@@ -47,25 +46,6 @@ async function attachDiscordThumbnail(embed, discordId) {
   if (url) {
     embed.thumbnail = { url };
   }
-}
-
-function sha256Hex(value) {
-  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
-function safeEqualHex(a, b) {
-  if (!a || !b) return false;
-  const bufA = Buffer.from(String(a), 'utf8');
-  const bufB = Buffer.from(String(b), 'utf8');
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-function extractProductKeys(body) {
-  const items = Array.isArray(body.items) ? body.items : [];
-  return items
-    .map((item) => String(item.product_key || '').trim())
-    .filter(Boolean);
 }
 
 function extractProductNames(body) {
@@ -337,13 +317,6 @@ function extractDiscordIdFromPayload(body) {
   return candidates[0] || '';
 }
 
-function isAllowedProduct(body) {
-  if (CONFIG.PAYHIP_ALLOWED_PRODUCTS.length === 0) return true;
-  const keys = extractProductKeys(body);
-  if (keys.length === 0) return false;
-  return keys.some((key) => CONFIG.PAYHIP_ALLOWED_PRODUCTS.includes(key));
-}
-
 async function sendPaidWebhookEmbed(body) {
   if (!CONFIG.DISCORD_WEBHOOK_URL) return;
 
@@ -594,12 +567,8 @@ module.exports = {
   loadStoreCached,
   saveStoreCached,
   STORE_CACHE,
-  sha256Hex,
-  safeEqualHex,
-  extractProductKeys,
   extractProductNames,
   extractDiscordIdFromPayload,
-  isAllowedProduct,
   sendPaidWebhookEmbed,
   sendReprintWebhookEmbed,
   buildOrderEmbedFromOrder,

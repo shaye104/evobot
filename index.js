@@ -1,4 +1,4 @@
-const { startDiscordBot } = require('./src/discord/bot');
+const { startDiscordBot } = require('./src/bot/runtime');
 
 async function main() {
   await startDiscordBot();

@@ -9,7 +9,10 @@ function loadEnv() {
   }
   candidates.push(path.join(process.cwd(), '.env'));
   candidates.push(path.join(process.cwd(), 'env'));
-  // Support running from repo root as well as from within DISCORD BOT/.
+  // Support running from repo root as well as from within discord-bot/.
+  candidates.push(path.join(process.cwd(), 'discord-bot', '.env'));
+  candidates.push(path.join(process.cwd(), 'discord-bot', 'env'));
+  // Legacy folder name fallback.
   candidates.push(path.join(process.cwd(), 'DISCORD BOT', '.env'));
   candidates.push(path.join(process.cwd(), 'DISCORD BOT', 'env'));
 
@@ -34,12 +37,7 @@ const CONFIG = {
     .split(',')
     .map((val) => val.trim())
     .filter(Boolean),
-  PAYHIP_API_KEY: process.env.PAYHIP_API_KEY || '',
   DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '',
-  PAYHIP_ALLOWED_PRODUCTS: (process.env.PAYHIP_ALLOWED_PRODUCTS || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean),
   DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN || '',
   DISCORD_APP_ID: process.env.DISCORD_APP_ID || '',
   DISCORD_CLIENT_SECRET: process.env.DISCORD_CLIENT_SECRET || '',

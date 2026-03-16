@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// The `jsonsnotifications` file is a sequence of JSON objects separated by whitespace.
+// The notification template file is a sequence of JSON objects separated by whitespace.
 // It's not valid JSON as a whole, so we parse by scanning balanced braces.
 function parseConcatenatedJsonObjects(text) {
   const out = [];
@@ -179,10 +179,17 @@ function loadNotificationTemplates() {
   if (process.env.DISCORD_NOTIFICATION_TEMPLATES_PATH) {
     candidates.push(process.env.DISCORD_NOTIFICATION_TEMPLATES_PATH);
   }
-  // Common case: bot runs with cwd = DISCORD BOT/.
-  candidates.push(path.join(process.cwd(), 'jsonsnotifications'));
+  // Current canonical template location.
+  candidates.push(path.join(process.cwd(), 'data', 'templates', 'discord-notifications.jsons'));
 
-  // If running from repo root, this finds the templates.
+  // If running from repository root.
+  candidates.push(
+    path.join(process.cwd(), 'discord-bot', 'data', 'templates', 'discord-notifications.jsons')
+  );
+
+  // Legacy template paths for backward compatibility.
+  candidates.push(path.join(process.cwd(), 'jsonsnotifications'));
+  candidates.push(path.join(process.cwd(), 'discord-bot', 'jsonsnotifications'));
   candidates.push(path.join(process.cwd(), 'DISCORD BOT', 'jsonsnotifications'));
 
   for (const filePath of candidates) {

@@ -16,8 +16,8 @@ const {
 const fs = require('fs');
 const path = require('path');
 const { CONFIG } = require('../config');
-const payhip = require('../payhip/service');
-const supportApi = require('./supportApi');
+const payhip = require('../services/payhipService');
+const supportApi = require('../services/supportApi');
 const {
   loadNotificationTemplates,
   renderTemplate,
@@ -27,10 +27,15 @@ const CUSTOMER_LOUNGE_CHANNEL_ID = '1468663410848698440';
 const BOT_STATE_PATH = (() => {
   if (process.env.DISCORD_BOT_STATE_PATH) return process.env.DISCORD_BOT_STATE_PATH;
   const cwd = process.cwd();
-  // If running from repo root, prefer DISCORD BOT. If running inside DISCORD BOT, use ./data.
-  const uploadsDir = path.join(cwd, 'DISCORD BOT');
-  if (fs.existsSync(uploadsDir)) {
-    return path.join(uploadsDir, 'data', 'bot_state.json');
+  // If running from repo root, prefer discord-bot. If running inside discord-bot, use ./data.
+  const newFolder = path.join(cwd, 'discord-bot');
+  if (fs.existsSync(newFolder)) {
+    return path.join(newFolder, 'data', 'bot_state.json');
+  }
+  // Legacy folder name fallback.
+  const legacyFolder = path.join(cwd, 'DISCORD BOT');
+  if (fs.existsSync(legacyFolder)) {
+    return path.join(legacyFolder, 'data', 'bot_state.json');
   }
   return path.join(cwd, 'data', 'bot_state.json');
 })();

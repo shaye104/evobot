@@ -1,5 +1,5 @@
 const mysql = require('mysql2/promise');
-const { CONFIG } = require('./config');
+const { CONFIG } = require('../config');
 
 let dbPool = null;
 
