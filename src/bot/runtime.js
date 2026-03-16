@@ -78,6 +78,9 @@ async function startDiscordBot() {
   });
   const recentEventKeys = new Map();
   let warnedMissingEventIds = false;
+  let staffSyncInFlight = false;
+  let claimedSyncInFlight = false;
+  let webhookSyncInFlight = false;
 
   function eventSignature(ev) {
     const numericId = toFiniteIntOrNull(ev?.id);
@@ -229,6 +232,9 @@ async function startDiscordBot() {
   }
 
   async function syncStaffReplies() {
+    if (staffSyncInFlight) return;
+    staffSyncInFlight = true;
+    try {
     if (!supportApi.isBotAuthReady()) return;
 
     const state = await loadBotState();
@@ -328,9 +334,15 @@ async function startDiscordBot() {
       );
     }
     await saveBotState(state);
+    } finally {
+      staffSyncInFlight = false;
+    }
   }
 
   async function syncClaimedUserMessages() {
+    if (claimedSyncInFlight) return;
+    claimedSyncInFlight = true;
+    try {
     if (!supportApi.isBotAuthReady()) return;
 
     const state = await loadBotState();
@@ -427,9 +439,15 @@ async function startDiscordBot() {
       );
     }
     await saveBotState(state);
+    } finally {
+      claimedSyncInFlight = false;
+    }
   }
 
   async function syncWebhookTicketEvents() {
+    if (webhookSyncInFlight) return;
+    webhookSyncInFlight = true;
+    try {
     if (!supportApi.isBotAuthReady()) return;
     if (
       !CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID &&
@@ -708,6 +726,9 @@ async function startDiscordBot() {
       state.last_audit_event_id = Number.MAX_SAFE_INTEGER;
     }
     await saveBotState(state);
+    } finally {
+      webhookSyncInFlight = false;
+    }
   }
 
   async function registerSlashCommand() {
