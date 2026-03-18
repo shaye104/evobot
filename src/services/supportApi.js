@@ -163,26 +163,6 @@ async function listWebhookEvents(sinceId) {
   return data.events || [];
 }
 
-async function listPurchaseEvents(sinceId, limit = 200) {
-  const safeLimit = Math.max(1, Math.min(500, Number(limit) || 200));
-  const data = await fetchJson(
-    `/api/bot/purchase-feed?since_id=${Number(sinceId || 0)}&limit=${safeLimit}`,
-    { auth: true }
-  );
-  return data.events || [];
-}
-
-async function listRecentPurchases({ since, limit = 200 } = {}) {
-  const safeLimit = Math.max(1, Math.min(500, Number(limit) || 200));
-  const params = new URLSearchParams();
-  params.set('limit', String(safeLimit));
-  if (since) params.set('since', String(since));
-  const data = await fetchJson(`/api/bot/purchases/recent?${params.toString()}`, {
-    auth: true,
-  });
-  return data.purchases || [];
-}
-
 module.exports = {
   isBotAuthReady,
   listPanels,
@@ -194,6 +174,4 @@ module.exports = {
   requestResponsePings,
   ackResponsePing,
   listWebhookEvents,
-  listPurchaseEvents,
-  listRecentPurchases,
 };
