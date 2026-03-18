@@ -924,6 +924,11 @@ async function startDiscordBot() {
         ),
         { body: data }
       );
+      // Remove stale global commands to avoid seeing duplicates in Discord
+      // when switching between global and guild-scoped registration.
+      await rest.put(Routes.applicationCommands(CONFIG.DISCORD_APP_ID), {
+        body: [],
+      });
       console.log('[discord] Registered guild commands');
     } else {
       await rest.put(Routes.applicationCommands(CONFIG.DISCORD_APP_ID), {
