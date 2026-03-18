@@ -81,6 +81,7 @@ async function startDiscordBot() {
   let staffSyncInFlight = false;
   let claimedSyncInFlight = false;
   let webhookSyncInFlight = false;
+  let purchaseSyncInFlight = false;
 
   function eventSignature(ev) {
     const numericId = toFiniteIntOrNull(ev?.id);
@@ -118,6 +119,31 @@ async function startDiscordBot() {
     if (text.length <= maxLen) return text;
     if (maxLen <= 3) return '...'.slice(0, maxLen);
     return `${text.slice(0, maxLen - 3).trimEnd()}...`;
+  }
+
+  function wrapCode(value) {
+    return `\`${String(value ?? '').replace(/`/g, '')}\``;
+  }
+
+  function wrapSpoiler(value) {
+    const clean = String(value ?? '').replace(/\|/g, '');
+    return `||${clean}||`;
+  }
+
+  function truncate(value, max = 256) {
+    const str = String(value ?? '');
+    return str.length > max ? `${str.slice(0, max - 3)}...` : str;
+  }
+
+  function toMoneyString(value, currency) {
+    if (value === null || value === undefined || value === '') return '--';
+    const raw = String(value).trim();
+    const num = Number(raw);
+    if (!Number.isFinite(num)) return currency ? `${raw} ${currency}` : raw;
+    const hasDecimal = /[.,]/.test(raw);
+    const normalized = hasDecimal ? num : num / 100;
+    const formatted = normalized.toFixed(2);
+    return currency ? `${formatted} ${currency}` : formatted;
   }
 
   async function handleAutoRoleAndWelcome(discordId) {
@@ -202,6 +228,7 @@ async function startDiscordBot() {
           parsed.last_claimed_user_message_id
         ),
         last_audit_event_id: toFiniteIntOrNull(parsed.last_audit_event_id),
+        last_purchase_event_id: toFiniteIntOrNull(parsed.last_purchase_event_id),
         ticket_open_message_ids: parsed.ticket_open_message_ids || {},
       };
     } catch {
@@ -209,6 +236,7 @@ async function startDiscordBot() {
         last_staff_message_id: null,
         last_claimed_user_message_id: null,
         last_audit_event_id: null,
+        last_purchase_event_id: null,
         ticket_open_message_ids: {},
       };
     }
@@ -222,6 +250,7 @@ async function startDiscordBot() {
         state.last_claimed_user_message_id
       ),
       last_audit_event_id: toFiniteIntOrNull(state.last_audit_event_id),
+      last_purchase_event_id: toFiniteIntOrNull(state.last_purchase_event_id),
       ticket_open_message_ids: state.ticket_open_message_ids || {},
     };
     await fs.promises.mkdir(path.dirname(BOT_STATE_PATH), { recursive: true });
@@ -731,6 +760,133 @@ async function startDiscordBot() {
     }
   }
 
+  async function syncPurchaseEvents() {
+    if (purchaseSyncInFlight) return;
+    purchaseSyncInFlight = true;
+    try {
+      if (!supportApi.isBotAuthReady()) return;
+
+      const purchaseChannelId =
+        CONFIG.DISCORD_PURCHASE_NOTIFY_CHANNEL_ID ||
+        CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
+      const canAssignRole = Boolean(CONFIG.DISCORD_GUILD_ID && CONFIG.DISCORD_ROLE_ID);
+      if (!purchaseChannelId && !canAssignRole) return;
+
+      const state = await loadBotState();
+      if (state.last_purchase_event_id == null) {
+        const events = await supportApi.listPurchaseEvents(0).catch(() => []);
+        state.last_purchase_event_id = maxNumericId(events) ?? 0;
+        await saveBotState(state);
+        return;
+      }
+
+      const events = await supportApi
+        .listPurchaseEvents(state.last_purchase_event_id)
+        .catch(() => []);
+      if (!Array.isArray(events) || !events.length) return;
+
+      const batchMaxId = maxNumericId(events);
+      console.log(
+        `[discord] Purchase events: fetched ${events.length} event(s) since id ${state.last_purchase_event_id}`
+      );
+
+      let purchaseChannel = null;
+      if (purchaseChannelId) {
+        try {
+          const ch = await client.channels.fetch(purchaseChannelId);
+          if (ch && ch.isTextBased()) purchaseChannel = ch;
+        } catch (err) {
+          console.warn(`[discord] Purchase channel fetch failed: ${err.message}`);
+        }
+      }
+
+      for (const ev of events) {
+        const tx = String(ev.transaction_id || '').trim();
+        if (!tx) continue;
+        const sig = `purchase|${eventSignature(ev)}|${tx}`;
+        if (seenRecentEvent(sig)) continue;
+
+        const p = ev.purchase || {};
+        const discordId = String(p.discord_id || '').trim();
+        if (discordId) {
+          await handleAutoRoleAndWelcome(discordId).catch((err) => {
+            console.warn(`[discord] Purchase auto-role failed (${tx}): ${err.message}`);
+          });
+        }
+
+        if (!purchaseChannel) continue;
+        try {
+          const currency = String(p.currency || '');
+          const embed = new EmbedBuilder()
+            .setTitle('New Purchase')
+            .setColor(0x2ecc71)
+            .setTimestamp(p.created_at || new Date().toISOString())
+            .addFields(
+              {
+                name: 'Purchased Products',
+                value: wrapCode(truncate(p.items_in_cart || '--')),
+                inline: true,
+              },
+              {
+                name: 'Order ID',
+                value: wrapCode(truncate(tx || '--')),
+                inline: true,
+              },
+              {
+                name: 'Order Status',
+                value: wrapCode(truncate(p.status || '--')),
+                inline: true,
+              },
+              {
+                name: 'Gross Amount',
+                value: wrapCode(truncate(toMoneyString(p.amount_gross, currency))),
+                inline: true,
+              },
+              {
+                name: 'Coupon Discount',
+                value: wrapCode(
+                  truncate(toMoneyString(p.coupon_discount_amount, currency))
+                ),
+                inline: true,
+              },
+              {
+                name: 'Net Amount',
+                value: wrapCode(truncate(toMoneyString(p.amount_net, currency))),
+                inline: true,
+              },
+              {
+                name: 'Discord ID',
+                value: wrapCode(truncate(discordId || '--')),
+                inline: true,
+              },
+              {
+                name: 'Email Address',
+                value: wrapSpoiler(
+                  wrapCode(truncate(String(p.email || '').toLowerCase() || '--'))
+                ),
+                inline: true,
+              }
+            )
+            .setFooter({ text: 'Purchased On' });
+
+          await purchaseChannel.send({ embeds: [embed] });
+        } catch (err) {
+          console.warn(`[discord] Purchase notify failed (${tx}): ${err.message}`);
+        }
+      }
+
+      if (batchMaxId != null) {
+        state.last_purchase_event_id = Math.max(
+          Number(state.last_purchase_event_id || 0),
+          batchMaxId
+        );
+        await saveBotState(state);
+      }
+    } finally {
+      purchaseSyncInFlight = false;
+    }
+  }
+
   async function registerSlashCommand() {
     if (!CONFIG.DISCORD_APP_ID) return;
 
@@ -792,7 +948,9 @@ async function startDiscordBot() {
             { name: 'status', value: 'status' },
             { name: 'test_open_channel', value: 'test_open_channel' },
             { name: 'test_escalate_channel', value: 'test_escalate_channel' },
-            { name: 'reset_event_cursor', value: 'reset_event_cursor' }
+            { name: 'test_purchase_channel', value: 'test_purchase_channel' },
+            { name: 'reset_event_cursor', value: 'reset_event_cursor' },
+            { name: 'reset_purchase_cursor', value: 'reset_purchase_cursor' }
           )
       );
 
@@ -875,6 +1033,9 @@ async function startDiscordBot() {
       syncWebhookTicketEvents().catch((err) => {
         console.warn(`[discord] Webhook event sync failed: ${err.message}`);
       });
+      syncPurchaseEvents().catch((err) => {
+        console.warn(`[discord] Purchase event sync failed: ${err.message}`);
+      });
       setInterval(() => {
         syncStaffReplies().catch((err) => {
           console.warn(`[discord] Staff reply sync failed: ${err.message}`);
@@ -888,6 +1049,11 @@ async function startDiscordBot() {
       setInterval(() => {
         syncWebhookTicketEvents().catch((err) => {
           console.warn(`[discord] Webhook event sync failed: ${err.message}`);
+        });
+      }, CONFIG.BOT_SYNC_INTERVAL_MS);
+      setInterval(() => {
+        syncPurchaseEvents().catch((err) => {
+          console.warn(`[discord] Purchase event sync failed: ${err.message}`);
         });
       }, CONFIG.BOT_SYNC_INTERVAL_MS);
 
@@ -1038,8 +1204,24 @@ async function startDiscordBot() {
         apiProbeClaimed = 'api_probe_claimed_messages: skipped (auth not ready)';
       }
 
+      let apiProbePurchases = '';
+      if (authReady) {
+        try {
+          const purchaseEvents = await supportApi.listPurchaseEvents(0);
+          apiProbePurchases = `api_probe_purchase_events: ok (${Array.isArray(purchaseEvents) ? purchaseEvents.length : 0} events)`;
+        } catch (err) {
+          apiProbePurchases = `api_probe_purchase_events: ${String(err?.message || err)}`;
+        }
+      } else {
+        apiProbePurchases = 'api_probe_purchase_events: skipped (auth not ready)';
+      }
+
       if (action === 'reset_event_cursor') {
         state.last_audit_event_id = null;
+        await saveBotState(state);
+      }
+      if (action === 'reset_purchase_cursor') {
+        state.last_purchase_event_id = null;
         await saveBotState(state);
       }
 
@@ -1048,6 +1230,9 @@ async function startDiscordBot() {
         CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
       const escalateChannelId =
         CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID ||
+        CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
+      const purchaseChannelId =
+        CONFIG.DISCORD_PURCHASE_NOTIFY_CHANNEL_ID ||
         CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID;
 
       async function testChannel(channelId, label) {
@@ -1068,6 +1253,8 @@ async function startDiscordBot() {
         testResult = await testChannel(openChannelId, 'open_channel');
       } else if (action === 'test_escalate_channel') {
         testResult = await testChannel(escalateChannelId, 'escalate_channel');
+      } else if (action === 'test_purchase_channel') {
+        testResult = await testChannel(purchaseChannelId, 'purchase_channel');
       }
 
       const lines = [
@@ -1076,14 +1263,18 @@ async function startDiscordBot() {
         `bot_api_token_set: ${Boolean(CONFIG.BOT_API_TOKEN)}`,
         apiProbe,
         apiProbeClaimed,
+        apiProbePurchases,
         `notify_channel_default: ${CONFIG.DISCORD_SUPPORT_NOTIFY_CHANNEL_ID || '(empty)'}`,
         `ticket_open_channel: ${CONFIG.DISCORD_TICKET_OPEN_CHANNEL_ID || '(empty)'} (effective: ${openChannelId || '(empty)'})`,
         `ticket_escalate_channel: ${CONFIG.DISCORD_TICKET_ESCALATE_CHANNEL_ID || '(empty)'} (effective: ${escalateChannelId || '(empty)'})`,
+        `purchase_notify_channel: ${CONFIG.DISCORD_PURCHASE_NOTIFY_CHANNEL_ID || '(empty)'} (effective: ${purchaseChannelId || '(empty)'})`,
         `last_staff_message_id: ${state.last_staff_message_id ?? '(null)'}`,
         `last_claimed_user_message_id: ${state.last_claimed_user_message_id ?? '(null)'}`,
         `last_audit_event_id: ${state.last_audit_event_id ?? '(null)'}`,
+        `last_purchase_event_id: ${state.last_purchase_event_id ?? '(null)'}`,
         testResult ? `test: ${testResult}` : null,
         action === 'reset_event_cursor' ? 'event cursor reset: done' : null,
+        action === 'reset_purchase_cursor' ? 'purchase cursor reset: done' : null,
       ].filter(Boolean);
 
       return interaction.reply({

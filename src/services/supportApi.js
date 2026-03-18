@@ -163,6 +163,15 @@ async function listWebhookEvents(sinceId) {
   return data.events || [];
 }
 
+async function listPurchaseEvents(sinceId, limit = 200) {
+  const safeLimit = Math.max(1, Math.min(500, Number(limit) || 200));
+  const data = await fetchJson(
+    `/api/bot/purchase-feed?since_id=${Number(sinceId || 0)}&limit=${safeLimit}`,
+    { auth: true }
+  );
+  return data.events || [];
+}
+
 module.exports = {
   isBotAuthReady,
   listPanels,
@@ -174,4 +183,5 @@ module.exports = {
   requestResponsePings,
   ackResponsePing,
   listWebhookEvents,
+  listPurchaseEvents,
 };
