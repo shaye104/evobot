@@ -963,25 +963,41 @@ async function startDiscordBot() {
       ticketCommand.toJSON(),
       botDebugCommand.toJSON(),
     ];
+    const guildCommandId = String(CONFIG.DISCORD_COMMAND_GUILD_ID || '').trim();
+    const fallbackGuildId = String(CONFIG.DISCORD_GUILD_ID || '').trim();
+    const knownGuildIds = [...new Set([guildCommandId, fallbackGuildId].filter(Boolean))];
 
-    if (CONFIG.DISCORD_COMMAND_GUILD_ID) {
+    if (guildCommandId) {
       await rest.put(
         Routes.applicationGuildCommands(
           CONFIG.DISCORD_APP_ID,
-          CONFIG.DISCORD_COMMAND_GUILD_ID
+          guildCommandId
         ),
         { body: data }
       );
-      // Remove stale global commands to avoid seeing duplicates in Discord
-      // when switching between global and guild-scoped registration.
+      // Remove stale commands in non-target scopes to prevent duplicate slash commands.
       await rest.put(Routes.applicationCommands(CONFIG.DISCORD_APP_ID), {
         body: [],
       });
+      for (const id of knownGuildIds) {
+        if (id === guildCommandId) continue;
+        await rest.put(
+          Routes.applicationGuildCommands(CONFIG.DISCORD_APP_ID, id),
+          { body: [] }
+        );
+      }
       console.log('[discord] Registered guild commands');
     } else {
+      // Register global commands and clear known guild scopes to prevent duplicates.
       await rest.put(Routes.applicationCommands(CONFIG.DISCORD_APP_ID), {
         body: data,
       });
+      for (const id of knownGuildIds) {
+        await rest.put(
+          Routes.applicationGuildCommands(CONFIG.DISCORD_APP_ID, id),
+          { body: [] }
+        );
+      }
       console.log('[discord] Registered global commands');
     }
   }
