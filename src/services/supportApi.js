@@ -166,7 +166,7 @@ async function listWebhookEvents(sinceId) {
 async function listPurchaseEvents(sinceId, limit = 200) {
   const safeLimit = Math.max(1, Math.min(500, Number(limit) || 200));
   const data = await fetchJson(
-    `/api/bot/purchase-events?since_id=${Number(sinceId || 0)}&limit=${safeLimit}`,
+    `/api/bot/purchase-feed?since_id=${Number(sinceId || 0)}&limit=${safeLimit}`,
     { auth: true }
   );
   return data.events || [];
